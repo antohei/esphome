@@ -5,6 +5,7 @@ from esphome.components.esp32 import include_builtin_idf_component
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_COUNT_MODE,
+    CONF_DIR_PIN,
     CONF_FALLING_EDGE,
     CONF_ID,
     CONF_INTERNAL_FILTER,
@@ -72,6 +73,10 @@ def validate_pulse_counter_pin(value):
     return value
 
 
+def validate_pulse_counter_dir_pin(value):
+    return pins.internal_gpio_input_pin_schema(value)
+
+
 def validate_count_mode(value):
     rising_edge = value[CONF_RISING_EDGE]
     falling_edge = value[CONF_FALLING_EDGE]
@@ -94,6 +99,7 @@ CONFIG_SCHEMA = cv.All(
     .extend(
         {
             cv.Required(CONF_PIN): validate_pulse_counter_pin,
+            cv.Optional(CONF_DIR_PIN): validate_pulse_counter_dir_pin,
             cv.Optional(
                 CONF_COUNT_MODE,
                 default={
@@ -136,6 +142,11 @@ async def to_code(config):
 
     pin = await cg.gpio_pin_expression(config[CONF_PIN])
     cg.add(var.set_pin(pin))
+
+    if dir_pin_config := config.get(CONF_DIR_PIN):
+        dir_pin = await cg.gpio_pin_expression(dir_pin_config)
+        cg.add(var.set_dir_pin(dir_pin))
+
     count = config[CONF_COUNT_MODE]
     cg.add(var.set_rising_edge_mode(count[CONF_RISING_EDGE]))
     cg.add(var.set_falling_edge_mode(count[CONF_FALLING_EDGE]))
@@ -152,7 +163,7 @@ async def to_code(config):
     cv.Schema(
         {
             cv.Required(CONF_ID): cv.use_id(PulseCounterSensor),
-            cv.Required(CONF_VALUE): cv.templatable(cv.uint32_t),
+            cv.Required(CONF_VALUE): cv.templatable(cv.int_),
         }
     ),
 )

@@ -34,17 +34,31 @@ void IRAM_ATTR BasicPulseCounterStorage::gpio_intr(BasicPulseCounterStorage *arg
     case PULSE_COUNTER_DISABLE:
       break;
     case PULSE_COUNTER_INCREMENT: {
-      auto x = arg->counter + 1;
-      arg->counter = x;
+      if (arg->dir_pin != nullptr && arg->dir_pin->digital_read()) {
+        auto x = arg->counter - 1;
+        arg->counter = x;
+      } else {
+        auto x = arg->counter + 1;
+        arg->counter = x;
+      }
     } break;
     case PULSE_COUNTER_DECREMENT: {
-      auto x = arg->counter - 1;
-      arg->counter = x;
+      if (arg->dir_pin != nullptr && arg->dir_pin->digital_read()) {
+        auto x = arg->counter + 1;
+        arg->counter = x;
+      } else {
+        auto x = arg->counter - 1;
+        arg->counter = x;
+      }
     } break;
   }
 }
 
-bool BasicPulseCounterStorage::pulse_counter_setup(InternalGPIOPin *pin) {
+bool BasicPulseCounterStorage::pulse_counter_setup(InternalGPIOPin *pin, InternalGPIOPin *dir_pin) {
+  if (dir_pin != nullptr) {
+    this->dir_pin = dir_pin;
+    this->dir_pin->setup();
+  }
   this->pin = pin;
   this->pin->setup();
   this->isr_pin = this->pin->to_isr();
@@ -60,7 +74,11 @@ pulse_counter_t BasicPulseCounterStorage::read_raw_value() {
 }
 
 #ifdef HAS_PCNT
-bool HwPulseCounterStorage::pulse_counter_setup(InternalGPIOPin *pin) {
+bool HwPulseCounterStorage::pulse_counter_setup(InternalGPIOPin *pin, InternalGPIOPin *dir_pin) {
+  if (dir_pin != nullptr) {
+    this->dir_pin = dir_pin;
+    this->dir_pin->setup();
+  }
   this->pin = pin;
   this->pin->setup();
 
@@ -77,7 +95,7 @@ bool HwPulseCounterStorage::pulse_counter_setup(InternalGPIOPin *pin) {
 
   pcnt_chan_config_t chan_config = {
       .edge_gpio_num = this->pin->get_pin(),
-      .level_gpio_num = -1,
+      .level_gpio_num = (dir_pin != nullptr) ? this->dir_pin->get_pin() : -1,
   };
   error = pcnt_new_channel(this->pcnt_unit, &chan_config, &this->pcnt_channel);
   if (error != ESP_OK) {
@@ -114,6 +132,15 @@ bool HwPulseCounterStorage::pulse_counter_setup(InternalGPIOPin *pin) {
   if (error != ESP_OK) {
     ESP_LOGE(TAG, "Setting PCNT edge action failed: %s", esp_err_to_name(error));
     return false;
+  }
+
+  if (dir_pin != nullptr) {
+    error = pcnt_channel_set_level_action(this->pcnt_channel, PCNT_CHANNEL_LEVEL_ACTION_INVERSE,
+                                          PCNT_CHANNEL_LEVEL_ACTION_KEEP);
+    if (error != ESP_OK) {
+      ESP_LOGE(TAG, "Setting PCNT level action failed: %s", esp_err_to_name(error));
+      return false;
+    }
   }
 
   if (this->filter_us != 0) {
@@ -167,13 +194,13 @@ pulse_counter_t HwPulseCounterStorage::read_raw_value() {
 #endif  // HAS_PCNT
 
 void PulseCounterSensor::setup() {
-  if (!this->storage_.pulse_counter_setup(this->pin_)) {
+  if (!this->storage_.pulse_counter_setup(this->pin_, this->dir_pin_)) {
     this->mark_failed();
     return;
   }
 }
 
-void PulseCounterSensor::set_total_pulses(uint32_t pulses) {
+void PulseCounterSensor::set_total_pulses(int32_t pulses) {
   this->current_total_ = pulses;
   this->total_sensor_->publish_state(pulses);
 }
@@ -181,6 +208,7 @@ void PulseCounterSensor::set_total_pulses(uint32_t pulses) {
 void PulseCounterSensor::dump_config() {
   LOG_SENSOR("", "Pulse Counter", this);
   LOG_PIN("  Pin: ", this->pin_);
+  LOG_PIN("  Dir Pin: ", this->dir_pin_);
   ESP_LOGCONFIG(TAG,
                 "  Rising Edge: %s\n"
                 "  Falling Edge: %s\n"
