@@ -14,8 +14,7 @@
 #endif  // defined(SOC_PCNT_SUPPORTED) && __has_include(<driver/pulse_cnt.h>)
 #endif  // USE_ESP32
 
-namespace esphome {
-namespace pulse_counter {
+namespace esphome::pulse_counter {
 
 enum PulseCounterCountMode {
   PULSE_COUNTER_DISABLE = 0,
@@ -88,5 +87,4 @@ class PulseCounterSensor : public sensor::Sensor, public PollingComponent {
   sensor::Sensor *total_sensor_{nullptr};
 };
 
-}  // namespace pulse_counter
-}  // namespace esphome
+}  // namespace esphome::pulse_counter
